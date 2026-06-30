@@ -1,0 +1,11 @@
+services:
+  - type: worker
+    name: music-dc-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m music_bot.bot
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.4
+      - key: PYTHONUTF8
+        value: "1"
