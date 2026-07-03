@@ -1,15 +1,17 @@
 """
 Music Bot Web Control Server
 Provides HTTP API for the website to control and monitor the Discord music bot.
-Runs on a separate port alongside the Discord bot.
+Runs alongside the Discord bot on a separate port.
 
 Endpoints:
-  GET  /guilds                   - List servers the bot can control
+  GET  /health                   - Health check
+  GET  /guilds                   - List servers the bot is in
   GET  /status?guildId=XXX       - Get current playback status
   POST /control                  - Send control command to bot
-  GET  /health                   - Health check
+  GET  /playlists?userId=XXX     - List all playlists for a user (across all guilds)
+  POST /playlists/save           - Save a playlist from the website
 
-Authentication: Bearer token via MUSIC_API_SECRET env var
+Authentication: Bearer token via MUSIC_API_SECRET env var (optional in dev)
 """
 
 import asyncio
@@ -30,12 +32,12 @@ MUSIC_API_SECRET = os.getenv("MUSIC_API_SECRET", "")
 WEB_SERVER_PORT = int(os.getenv("MUSIC_WEB_SERVER_PORT", os.getenv("PORT", "8090")))
 WEB_SERVER_HOST = os.getenv("MUSIC_WEB_SERVER_HOST", "0.0.0.0")
 
-# Allowed actions
-VALID_ACTIONS = {"pause", "resume", "skip", "previous", "stop", "volume", "loop", "shuffle", "play_playlist", "channels", "play"}
+VALID_ACTIONS = {"pause", "resume", "skip", "stop", "volume", "loop", "shuffle", "play_playlist", "channels", "play"}
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _guild_icon_url(guild) -> Optional[str]:
-    """Return a Discord CDN icon URL for a guild when one exists."""
     try:
         return str(guild.icon.url) if guild.icon else None
     except Exception:
@@ -54,17 +56,14 @@ def _guild_payload(guild) -> dict:
         "textChannelCount": len(guild.text_channels),
         "activeVoiceChannel": (
             {"id": str(active_channel.id), "name": active_channel.name}
-            if active_channel
-            else None
+            if active_channel else None
         ),
     }
 
 
 def _verify_token(request: web.Request) -> bool:
-    """Verify the bearer token in the request."""
     if not MUSIC_API_SECRET:
-        # No secret configured — allow all (development mode)
-        return True
+        return True  # dev mode: no secret required
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:] == MUSIC_API_SECRET
@@ -72,7 +71,6 @@ def _verify_token(request: web.Request) -> bool:
 
 
 def _cors_headers():
-    """Return CORS headers for web responses."""
     return {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -90,7 +88,6 @@ def _json_response(data: dict, status: int = 200) -> web.Response:
 
 
 def _get_player_status(bot: "MusicBot", guild_id: int) -> Optional[dict]:
-    """Extract playback status from a guild's voice player."""
     import wavelink
     guild = bot.get_guild(guild_id)
     if not guild:
@@ -116,7 +113,7 @@ def _get_player_status(bot: "MusicBot", guild_id: int) -> Optional[dict]:
 
     queue_tracks = []
     if queue and not queue.is_empty:
-        for i, track in enumerate(list(queue)[:20]):
+        for track in list(queue)[:20]:
             queue_tracks.append({
                 "title": getattr(track, "title", "Unknown"),
                 "author": getattr(track, "author", "Unknown"),
@@ -124,13 +121,9 @@ def _get_player_status(bot: "MusicBot", guild_id: int) -> Optional[dict]:
                 "length": getattr(track, "length", 0),
             })
 
-    # Voice channel info
     voice_channel = None
     if player.channel:
-        voice_channel = {
-            "id": str(player.channel.id),
-            "name": player.channel.name,
-        }
+        voice_channel = {"id": str(player.channel.id), "name": player.channel.name}
 
     return {
         "guildId": str(guild_id),
@@ -145,34 +138,31 @@ def _get_player_status(bot: "MusicBot", guild_id: int) -> Optional[dict]:
         "voiceChannel": voice_channel,
         "playlistName": getattr(player, "current_playlist_name", None),
         "updatedAt": time.time(),
+        "source": "live",
     }
 
 
+# ── Route handlers ────────────────────────────────────────────────────────────
+
 async def _handle_health(request: web.Request) -> web.Response:
-    """Health check endpoint."""
     return _json_response({"status": "ok", "service": "music-bot-api"})
 
 
 async def _handle_guilds(request: web.Request) -> web.Response:
-    """List servers the bot is currently in."""
     if not _verify_token(request):
         return _json_response({"error": "Unauthorized"}, 401)
-
     bot: "MusicBot" = request.app["bot"]
-    guilds = sorted((_guild_payload(guild) for guild in bot.guilds), key=lambda item: item["name"].lower())
+    guilds = sorted((_guild_payload(g) for g in bot.guilds), key=lambda x: x["name"].lower())
     return _json_response({"ok": True, "guilds": guilds})
 
 
 async def _handle_status(request: web.Request) -> web.Response:
-    """Get current playback status for a guild."""
     if not _verify_token(request):
         return _json_response({"error": "Unauthorized"}, 401)
-
     bot: "MusicBot" = request.app["bot"]
     guild_id_str = request.rel_url.query.get("guildId", "")
 
     if not guild_id_str:
-        # Return status for all active guilds
         statuses = []
         for guild in bot.guilds:
             status = _get_player_status(bot, guild.id)
@@ -187,13 +177,67 @@ async def _handle_status(request: web.Request) -> web.Response:
 
     status = _get_player_status(bot, guild_id)
     if status is None:
-        return _json_response({"guildId": guild_id_str, "playing": False, "currentTrack": None, "queue": []})
-
+        return _json_response({"guildId": guild_id_str, "playing": False, "currentTrack": None, "queue": [], "source": "live"})
     return _json_response(status)
 
 
+async def _handle_playlists_list(request: web.Request) -> web.Response:
+    """List all playlists for a Discord user (across all guilds)."""
+    if not _verify_token(request):
+        return _json_response({"error": "Unauthorized"}, 401)
+
+    user_id_str = request.rel_url.query.get("userId", "")
+    if not user_id_str:
+        return _json_response({"error": "userId is required"}, 400)
+
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return _json_response({"error": "Invalid userId"}, 400)
+
+    from music_bot.storage.playlist_storage import playlist_storage
+    playlists = await playlist_storage.list_playlists_for_user(user_id)
+
+    # Collect guild IDs that have playlists
+    guild_ids = list({p["guildId"] for p in playlists if p.get("guildId")})
+
+    return _json_response({"ok": True, "playlists": playlists, "guilds": guild_ids})
+
+
+async def _handle_playlists_save(request: web.Request) -> web.Response:
+    """Save a playlist from the website dashboard."""
+    if not _verify_token(request):
+        return _json_response({"error": "Unauthorized"}, 401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _json_response({"error": "Invalid JSON"}, 400)
+
+    guild_id_str = str(body.get("guildId", ""))
+    user_id_str = str(body.get("userId", ""))
+    name = str(body.get("name", "")).strip()
+    tracks = body.get("tracks", [])
+
+    if not guild_id_str or not user_id_str or not name:
+        return _json_response({"error": "guildId, userId, and name are required"}, 400)
+    if not isinstance(tracks, list):
+        return _json_response({"error": "tracks must be a list"}, 400)
+
+    try:
+        guild_id = int(guild_id_str)
+        user_id = int(user_id_str)
+    except ValueError:
+        return _json_response({"error": "Invalid guildId or userId"}, 400)
+
+    from music_bot.storage.playlist_storage import playlist_storage
+    ok = await playlist_storage.save_playlist(guild_id, user_id, name, tracks)
+    if ok:
+        return _json_response({"ok": True, "saved": name, "tracks": len(tracks)})
+    return _json_response({"error": "Failed to save playlist — database may be unavailable"}, 503)
+
+
 async def _handle_control(request: web.Request) -> web.Response:
-    """Handle a control command from the web."""
     if not _verify_token(request):
         return _json_response({"error": "Unauthorized"}, 401)
 
@@ -211,7 +255,6 @@ async def _handle_control(request: web.Request) -> web.Response:
 
     if action not in VALID_ACTIONS:
         return _json_response({"error": f"Invalid action. Allowed: {', '.join(sorted(VALID_ACTIONS))}"}, 400)
-
     if not guild_id_str:
         return _json_response({"error": "guildId is required"}, 400)
 
@@ -225,11 +268,13 @@ async def _handle_control(request: web.Request) -> web.Response:
     bot: "MusicBot" = request.app["bot"]
     guild = bot.get_guild(guild_id)
     if not guild:
-        return _json_response({"error": "Guild not found"}, 404)
+        return _json_response({"error": "Guild not found — bot is not in this server"}, 404)
 
     player = guild.voice_client
-    if action not in ("channels", "play") and (not player or not isinstance(player, wavelink.Player)):
-        return _json_response({"error": "Bot is not in a voice channel in this server"}, 404)
+
+    # Actions that don't need an active player
+    if action not in ("channels", "play", "play_playlist") and (not player or not isinstance(player, wavelink.Player)):
+        return _json_response({"error": "Bot is not in a voice channel. Play something first."}, 404)
 
     try:
         if action == "channels":
@@ -238,29 +283,30 @@ async def _handle_control(request: web.Request) -> web.Response:
                 "voiceChannels": [{"id": str(c.id), "name": c.name} for c in guild.voice_channels],
                 "textChannels": [{"id": str(c.id), "name": c.name} for c in guild.text_channels],
             })
-            
+
         elif action == "play":
             query = str(value) if value else ""
             if not query:
                 return _json_response({"error": "Query is required for play action"}, 400)
-            
+
             if not player or not isinstance(player, wavelink.Player):
                 if not voice_channel_id:
-                    return _json_response({"error": "Bot is not in a voice channel and no voiceChannelId provided"}, 400)
+                    return _json_response({"error": "Bot is not in a voice channel — select a voice channel first"}, 400)
                 vc = bot.get_channel(int(voice_channel_id))
                 if not vc:
                     return _json_response({"error": "Voice channel not found"}, 404)
                 from music_bot.cogs.music import CustomPlayer
                 player = await vc.connect(cls=CustomPlayer)
+
             if text_channel_id and hasattr(player, "text_channel"):
-                text_channel = guild.get_channel(int(text_channel_id))
-                if text_channel:
-                    player.text_channel = text_channel
-                
+                tc = guild.get_channel(int(text_channel_id))
+                if tc:
+                    player.text_channel = tc
+
             tracks = await wavelink.Playable.search(query)
             if not tracks:
-                return _json_response({"error": "No tracks found"}, 404)
-                
+                return _json_response({"error": "No tracks found for that search"}, 404)
+
             track = tracks[0] if isinstance(tracks, list) else tracks
             if isinstance(track, wavelink.Playlist):
                 for t in track.tracks:
@@ -273,7 +319,8 @@ async def _handle_control(request: web.Request) -> web.Response:
                 if not player.playing:
                     await player.play(player.queue.get())
                 return _json_response({"ok": True, "action": "play", "track": track.title})
-        if action == "pause":
+
+        elif action == "pause":
             await player.pause(True)
             return _json_response({"ok": True, "action": "pause"})
 
@@ -285,21 +332,14 @@ async def _handle_control(request: web.Request) -> web.Response:
             await player.skip(force=True)
             return _json_response({"ok": True, "action": "skip"})
 
-        elif action == "previous":
-            if hasattr(player, "history") and player.history:
-                prev = player.history[-1]
-                await player.play(prev)
-                return _json_response({"ok": True, "action": "previous"})
-            return _json_response({"error": "No previous track"}, 400)
-
         elif action == "stop":
             player.queue.clear()
             await player.stop()
+            await player.disconnect()
             return _json_response({"ok": True, "action": "stop"})
 
         elif action == "volume":
-            vol = int(value) if value is not None else 50
-            vol = max(0, min(200, vol))
+            vol = max(0, min(200, int(value) if value is not None else 50))
             await player.set_volume(vol)
             return _json_response({"ok": True, "action": "volume", "value": vol})
 
@@ -329,35 +369,36 @@ async def _handle_control(request: web.Request) -> web.Response:
                     return _json_response({"error": "Voice channel not found"}, 404)
                 from music_bot.cogs.music import CustomPlayer
                 player = await vc.connect(cls=CustomPlayer)
+
             if text_channel_id and hasattr(player, "text_channel"):
-                text_channel = guild.get_channel(int(text_channel_id))
-                if text_channel:
-                    player.text_channel = text_channel
+                tc = guild.get_channel(int(text_channel_id))
+                if tc:
+                    player.text_channel = tc
 
             from music_bot.storage.playlist_storage import playlist_storage
             playlist = await playlist_storage.load_playlist(guild_id, int(user_id), playlist_name)
             if not playlist:
-                return _json_response({"error": "Playlist not found for this Discord user and server"}, 404)
+                return _json_response({"error": "Playlist not found — save it first with /playlist save in Discord"}, 404)
 
             loaded = 0
             for saved_track in playlist.get("tracks", []):
                 uri = saved_track.get("uri") or saved_track.get("title")
                 if not uri:
                     continue
-                tracks = await wavelink.Playable.search(str(uri))
-                if not tracks:
+                found = await wavelink.Playable.search(str(uri))
+                if not found:
                     continue
-                track = tracks[0] if isinstance(tracks, list) else tracks
-                if isinstance(track, wavelink.Playlist):
-                    for playlist_track in track.tracks:
-                        await player.queue.put_wait(playlist_track)
+                t = found[0] if isinstance(found, list) else found
+                if isinstance(t, wavelink.Playlist):
+                    for pt in t.tracks:
+                        await player.queue.put_wait(pt)
                         loaded += 1
                 else:
-                    await player.queue.put_wait(track)
+                    await player.queue.put_wait(t)
                     loaded += 1
 
             if loaded == 0:
-                return _json_response({"error": "No playable tracks were found in that playlist"}, 404)
+                return _json_response({"error": "No playable tracks found in that playlist"}, 404)
 
             player.current_playlist_name = playlist_name
             if not player.playing and not player.queue.is_empty:
@@ -372,12 +413,10 @@ async def _handle_control(request: web.Request) -> web.Response:
 
 
 async def _handle_options(request: web.Request) -> web.Response:
-    """Handle CORS preflight."""
     return web.Response(status=204, headers=_cors_headers())
 
 
 def create_web_app(bot: "MusicBot") -> web.Application:
-    """Create and configure the aiohttp web application."""
     app = web.Application()
     app["bot"] = bot
 
@@ -385,23 +424,18 @@ def create_web_app(bot: "MusicBot") -> web.Application:
     app.router.add_get("/guilds", _handle_guilds)
     app.router.add_get("/status", _handle_status)
     app.router.add_post("/control", _handle_control)
-
-    # CORS preflight
+    app.router.add_get("/playlists", _handle_playlists_list)
+    app.router.add_post("/playlists/save", _handle_playlists_save)
     app.router.add_options("/{path_info:.*}", _handle_options)
 
     return app
 
 
 async def start_web_server(bot: "MusicBot") -> web.AppRunner:
-    """Start the web control server and return the runner (for cleanup)."""
     app = create_web_app(bot)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, WEB_SERVER_HOST, WEB_SERVER_PORT)
     await site.start()
-    logger.info(
-        "Music bot web control server started on %s:%s",
-        WEB_SERVER_HOST,
-        WEB_SERVER_PORT,
-    )
+    logger.info("Music bot web server started on %s:%s", WEB_SERVER_HOST, WEB_SERVER_PORT)
     return runner
