@@ -3001,13 +3001,27 @@ class Music(commands.Cog):
             await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
             return
             
+        await interaction.response.defer(ephemeral=True)
+        
+        # Delete old now playing message if it exists
+        if player.now_playing_message:
+            try:
+                await player.now_playing_message.delete()
+            except:
+                pass
+                
         embed = self.create_now_playing_embed(player)
         view = PlayerControlView(player)
-        await interaction.response.send_message(embed=embed, view=view)
-        # Store the message for future edits
-        player.now_playing_message = await interaction.original_response()
+        
+        # Update text channel to the one where the command was run
+        player.text_channel = interaction.channel
+        
+        # Send new standard message
+        player.now_playing_message = await interaction.channel.send(embed=embed, view=view)
         player.now_playing_message_created_at = time.time()
         
+        await interaction.followup.send("✅ Now playing message moved here.", ephemeral=True)
+
     @app_commands.command(name="queue", description="Show the music queue")
     @app_commands.describe(page="Page number to view")
     async def queue(self, interaction: discord.Interaction, page: int = 1):
