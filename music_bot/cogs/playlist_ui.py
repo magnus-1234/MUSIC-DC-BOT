@@ -86,6 +86,81 @@ class SavePlaylistModal(discord.ui.Modal, title="Save Playlist"):
 class PlaylistSelect(discord.ui.Select):
     """Dropdown for selecting a playlist"""
     
+
+
+class SavePlaylistModal(discord.ui.Modal, title="Save Playlist"):
+    """Modal for entering playlist name"""
+    
+    playlist_name = discord.ui.TextInput(
+        label="Playlist Name",
+        placeholder="Enter a name for this playlist...",
+        max_length=50,
+        required=True
+    )
+    
+    def __init__(self, player, user_id: int, guild_id: int):
+        super().__init__()
+        self.player = player
+        self.user_id = user_id
+        self.guild_id = guild_id
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+            
+            # Check if queue is empty
+            if self.player.queue.is_empty and not self.player.current:
+                await interaction.followup.send("❌ Queue is empty! Add some tracks first.", ephemeral=True)
+                return
+            
+            # Collect all tracks (current + queue)
+            tracks = []
+            
+            # Add current track if playing
+            if self.player.current:
+                track = self.player.current
+                tracks.append({
+                    'title': track.title,
+                    'author': track.author,
+                    'uri': track.uri,
+                    'length': track.length
+                })
+            
+            # Add queued tracks
+            for track in list(self.player.queue):
+                tracks.append({
+                    'title': track.title,
+                    'author': track.author,
+                    'uri': track.uri,
+                    'length': track.length
+                })
+            
+            # Save to database
+            name = self.playlist_name.value.strip()
+            success = await playlist_storage.save_playlist(
+                self.guild_id,
+                self.user_id,
+                name,
+                tracks
+            )
+            
+            if success:
+                await interaction.followup.send(
+                    f"✅ Saved playlist **{name}** with **{len(tracks)}** tracks!",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ Failed to save playlist. Please try again.",
+                    ephemeral=True
+                )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+
+class PlaylistSelect(discord.ui.Select):
+    """Dropdown for selecting a playlist"""
+    
     def __init__(self, playlists: List[dict], action: str):
         self.action = action  # "load" or "delete"
         
@@ -93,7 +168,7 @@ class PlaylistSelect(discord.ui.Select):
         for playlist in playlists[:25]:  # Discord limit
             options.append(discord.SelectOption(
                 label=playlist['name'],
-                description=f"{playlist['track_count']} tracks",
+                description=f"{playlist.get('trackCount', len(playlist.get('tracks', [])))} tracks",
                 value=playlist['name']
             ))
         
@@ -152,7 +227,8 @@ class PlaylistListView(discord.ui.View):
             for i, playlist in enumerate(self.playlists, start=1):
                 created = datetime.fromisoformat(playlist['created_at']).strftime("%Y-%m-%d")
                 playlist_text += f"`{i}.` **{playlist['name']}**\n"
-                playlist_text += f"   └ {playlist['track_count']} tracks • Created: {created}\n\n"
+                track_count = playlist.get('trackCount', len(playlist.get('tracks', [])))
+                playlist_text += f"   └ {track_count} tracks • Created: {created}\n\n"
             
             embed.add_field(
                 name="Your Playlists",
@@ -414,202 +490,6 @@ class PlaylistLoadedView(discord.ui.View):
     async def now_playing(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Show now playing info"""
         from music_bot.cogs.music import Music, PlayerControlView
-        
-        if not self.player.current:
-            await interaction.response.send_message("❌ Nothing is playing!", ephemeral=True)
-            return
-        
-        # Create a temporary Music instance to use create_now_playing_embed
-        music_cog = interaction.client.get_cog('Music')
-        if music_cog:
-            embed = music_cog.create_now_playing_embed(self.player)
-            view = PlayerControlView(self.player)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Music cog not found!", ephemeral=True)
-
-
-class PlaylistManagementView(discord.ui.View):
-    
-    def __init__(self, user_id: int, guild_id: int, player):
-        super().__init__(timeout=180)
-        self.user_id = user_id
-        self.guild_id = guild_id
-        self.player = player
-    
-    def get_embed(self) -> discord.Embed:
-        """Generate main playlist manager embed"""
-        queue_count = self.player.queue.count
-        current_playing = self.player.current.title if self.player.current else "Nothing"
-        
-        embed = discord.Embed(
-            title="🎵 Playlist Manager",
-            color=0x5865F2,  # Discord blurple color
-            description=""
-        )
-        
-        # Current status section
-        status_text = f"**Queue:** {queue_count} tracks\n"
-        status_text += f"**Now Playing:** {current_playing}\n"
-        
-        if self.player.current_playlist_name:
-            status_text += f"**Loaded Playlist:** 📁 {self.player.current_playlist_name}"
-        
-        embed.add_field(
-            name="📊 Current Status",
-            value=status_text,
-            inline=False
-        )
-        
-        # Instructions
-        embed.add_field(
-            name="💡 Quick Actions",
-            value="• **Save Current Queue** - Save your current queue as a playlist\n"
-                  "• **My Playlists** - View and manage your saved playlists",
-            inline=False
-        )
-        
-        embed.set_footer(text="💾 Save • 📋 View • ❌ Close", icon_url="https://cdn.discordapp.com/emojis/852881450667081728.gif")
-        return embed
-    
-    @discord.ui.button(emoji="💾", label="Save Current Queue", style=discord.ButtonStyle.primary, custom_id="save_queue", row=0)
-    async def save_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Open modal to save current queue"""
-        if self.player.queue.is_empty and not self.player.current:
-            await interaction.response.send_message("❌ Queue is empty! Add some tracks first.", ephemeral=True)
-            return
-        
-        modal = SavePlaylistModal(self.player, self.user_id, self.guild_id)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(emoji="📋", label="My Playlists", style=discord.ButtonStyle.secondary, custom_id="my_playlists", row=0)
-    async def my_playlists(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Show saved playlists"""
-        view = PlaylistListView(self.user_id, self.guild_id, self.player)
-        await view.load_playlists()
-        await view.update_view(interaction)
-    
-    @discord.ui.button(emoji="❌", label="Close", style=discord.ButtonStyle.danger, custom_id="close", row=0)
-    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Close the playlist manager"""
-        embed = discord.Embed(
-            description="✅ Playlist manager closed",
-            color=0x57F287
-        )
-        await interaction.response.edit_message(embed=embed, view=None)
-
-
-class AddTrackToPlaylistModal(discord.ui.Modal, title="Add to Playlist"):
-    """Modal for adding track to an existing playlist or creating new one"""
-    
-    playlist_name = discord.ui.TextInput(
-        label="Playlist Name",
-        placeholder="Enter existing or new playlist name...",
-        max_length=50,
-        required=True
-    )
-    
-    def __init__(self, player, user_id: int, guild_id: int, track_data: dict):
-        super().__init__()
-        self.player = player
-        self.user_id = user_id
-        self.guild_id = guild_id
-        self.track_data = track_data
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer()
-            
-            playlist_name = self.playlist_name.value.strip()
-            
-            # Check if playlist exists
-            existing_playlist = await playlist_storage.load_playlist(
-                self.guild_id,
-                self.user_id,
-                playlist_name
-            )
-            
-            if existing_playlist:
-                # Add to existing playlist
-                tracks = existing_playlist['tracks']
-                tracks.append(self.track_data)
-                
-                success = await playlist_storage.save_playlist(
-                    self.guild_id,
-                    self.user_id,
-                    playlist_name,
-                    tracks
-                )
-                
-                if success:
-                    await interaction.followup.send(
-                        f"✅ Added **{self.track_data['title']}** to playlist **{playlist_name}**!",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "❌ Failed to add track to playlist. Please try again.",
-                        ephemeral=True
-                    )
-            else:
-                # Create new playlist with this track
-                success = await playlist_storage.save_playlist(
-                    self.guild_id,
-                    self.user_id,
-                    playlist_name,
-                    [self.track_data]
-                )
-                
-                if success:
-                    await interaction.followup.send(
-                        f"✅ Created new playlist **{playlist_name}** with **{self.track_data['title']}**!",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "❌ Failed to create playlist. Please try again.",
-                        ephemeral=True
-                    )
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
-
-
-class AddToPlaylistView(discord.ui.View):
-    """View for adding current track to a playlist"""
-    
-    def __init__(self, player, user_id: int, guild_id: int):
-        super().__init__(timeout=180)
-        self.player = player
-        self.user_id = user_id
-        self.guild_id = guild_id
-        self.playlists = []
-        self.per_page = 25  # Discord max for select menu
-    
-    async def load_playlists(self):
-        """Load user's playlists"""
-        self.playlists = await playlist_storage.list_playlists(
-            self.guild_id,
-            self.user_id,
-            limit=self.per_page,
-            offset=0
-        )
-        
-        # Add playlist select if user has playlists
-        if self.playlists:
-            self.clear_items()
-            
-            # Create select menu with existing playlists
-            options = []
-            for playlist in self.playlists[:25]:  # Discord limit
-                options.append(discord.SelectOption(
-                    label=playlist['name'],
-                    description=f"{playlist['track_count']} tracks",
-                    value=playlist['name']
-                ))
-            
-            select = discord.ui.Select(
-                placeholder="Select a playlist to add to...",
-                options=options,
                 custom_id="add_to_existing"
             )
             select.callback = self.add_to_existing_callback
