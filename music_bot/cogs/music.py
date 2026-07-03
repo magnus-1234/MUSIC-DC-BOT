@@ -3006,6 +3006,7 @@ class Music(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view)
         # Store the message for future edits
         player.now_playing_message = await interaction.original_response()
+        player.now_playing_message_created_at = time.time()
         
     @app_commands.command(name="queue", description="Show the music queue")
     @app_commands.describe(page="Page number to view")
