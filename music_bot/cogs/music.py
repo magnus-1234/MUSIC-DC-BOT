@@ -2772,9 +2772,19 @@ class Music(commands.Cog):
             if not player:
                 return
                 
-            # Search for tracks with error handling for Spotify
+            # Search for tracks with error handling and SoundCloud fallback
             try:
                 tracks = await wavelink.Playable.search(query)
+            except Exception as e:
+                # If the search failed and it is not a direct URL, attempt a SoundCloud fallback
+                if not (query.startswith("http://") or query.startswith("https://")):
+                    try:
+                        tracks = await wavelink.Playable.search(f"scsearch:{query}")
+                    except Exception:
+                        # If fallback also fails, raise the original exception
+                        raise e
+                else:
+                    raise e
             except wavelink.LavalinkLoadException as e:
                 # Check if it's a Spotify-related error
                 error_msg = str(e)
