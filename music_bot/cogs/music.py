@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import playlist UI components
+from music_bot.utils.prefix_adapter import ContextInteractionAdapter
 try:
     from music_bot.cogs.playlist_ui import PlaylistManagementView, AddToPlaylistView
 except ImportError:
@@ -3219,7 +3220,97 @@ class Music(commands.Cog):
         embed = view.get_embed()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+    # --- PREFIX COMMAND WRAPPERS ---
+    
+    @commands.command(name="play", aliases=["p"])
+    async def prefix_play(self, ctx: commands.Context, *, query: str):
+        """Play a song using a text command"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.play.callback(self, adapter, query)
 
+    @commands.command(name="pause")
+    async def prefix_pause(self, ctx: commands.Context):
+        """Pause playback"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.pause.callback(self, adapter)
+
+    @commands.command(name="resume")
+    async def prefix_resume(self, ctx: commands.Context):
+        """Resume playback"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.resume.callback(self, adapter)
+
+    @commands.command(name="skip", aliases=["s", "next"])
+    async def prefix_skip(self, ctx: commands.Context):
+        """Skip track"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.skip.callback(self, adapter)
+
+    @commands.command(name="stop", aliases=["leave", "disconnect", "dc"])
+    async def prefix_stop(self, ctx: commands.Context):
+        """Stop playback and disconnect"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.stop.callback(self, adapter)
+
+    @commands.command(name="nowplaying", aliases=["np", "playing"])
+    async def prefix_nowplaying(self, ctx: commands.Context):
+        """Show currently playing track"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.nowplaying.callback(self, adapter)
+
+    @commands.command(name="queue", aliases=["q"])
+    async def prefix_queue(self, ctx: commands.Context):
+        """Show the queue"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.queue.callback(self, adapter)
+
+    @commands.command(name="volume", aliases=["vol", "v"])
+    async def prefix_volume(self, ctx: commands.Context, level: int):
+        """Set volume"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.volume.callback(self, adapter, level)
+
+    @commands.command(name="shuffle")
+    async def prefix_shuffle(self, ctx: commands.Context):
+        """Shuffle queue"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.shuffle.callback(self, adapter)
+
+    @commands.command(name="loop", aliases=["repeat"])
+    async def prefix_loop(self, ctx: commands.Context, mode: str = "track"):
+        """Set loop mode"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.loop.callback(self, adapter, mode)
+
+    @commands.command(name="clear")
+    async def prefix_clear(self, ctx: commands.Context):
+        """Clear queue"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.clear.callback(self, adapter)
+
+    @commands.command(name="remove", aliases=["rm"])
+    async def prefix_remove(self, ctx: commands.Context, index: int):
+        """Remove track from queue"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.remove.callback(self, adapter, index)
+
+    @commands.command(name="seek")
+    async def prefix_seek(self, ctx: commands.Context, position: str):
+        """Seek to a specific position"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.seek.callback(self, adapter, position)
+
+    @commands.command(name="previous", aliases=["prev", "back"])
+    async def prefix_previous(self, ctx: commands.Context):
+        """Play previous track"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.previous.callback(self, adapter)
+
+    @commands.command(name="playlist")
+    async def prefix_playlist(self, ctx: commands.Context):
+        """Manage playlists"""
+        adapter = ContextInteractionAdapter(ctx)
+        await self.playlist.callback(self, adapter)
 
 async def setup(bot: commands.Bot):
     """Setup function for loading the cog"""
