@@ -1672,6 +1672,26 @@ class Music(commands.Cog):
         # Start cleanup task
         self.cleanup_task = None
         
+    async def force_clean_voice_state(self, guild: discord.Guild):
+        """Force clean any zombie voice state in Discord"""
+        try:
+            # First try normal disconnect if client exists
+            if guild.voice_client:
+                try:
+                    await guild.voice_client.disconnect(force=True)
+                except Exception:
+                    pass
+            
+            # Send raw WS payload to guarantee Discord drops the connection
+            # This is the magic bullet for zombie voice states
+            await guild.change_voice_state(channel=None)
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Error cleaning voice state for {guild.name}: {e}")
+            else:
+                print(f"Error cleaning voice state for {guild.name}: {e}")
+        
     async def cog_load(self):
         """Initialize Wavelink node when cog loads"""
         try:
@@ -1821,6 +1841,10 @@ class Music(commands.Cog):
                     
                     for attempt in range(max_connect_retries):
                         try:
+                            # Clear zombie states on first attempt or if retry
+                            if attempt > 0 or not guild.voice_client:
+                                await self.force_clean_voice_state(guild)
+                                
                             print(f"  🔌 Connecting to {channel.name} in {guild.name} (attempt {attempt + 1}/{max_connect_retries})...")
                             player: CustomPlayer = await channel.connect(
                                 cls=CustomPlayer, 
@@ -2389,8 +2413,8 @@ class Music(commands.Cog):
                 print(f"🔄 Attempting to reconnect player...")
                 
                 try:
-                    # Disconnect old player
-                    await player.disconnect()
+                    # Clear completely including zombie states
+                    await self.force_clean_voice_state(player.guild)
                     
                     # Wait a moment
                     await asyncio.sleep(1)
@@ -2675,14 +2699,8 @@ class Music(commands.Cog):
                     try:
                         print(f"🔄 Connecting to {target_channel.name} (attempt {attempt + 1}/{max_connect_retries})...")
                         
-                        # Ensure any old voice client is disconnected before a new attempt
-                        if interaction.guild.voice_client:
-                            print(f"🧹 Force disconnecting existing voice client in {interaction.guild.name}")
-                            try:
-                                await interaction.guild.voice_client.disconnect(force=True)
-                                await asyncio.sleep(1)
-                            except Exception:
-                                pass
+                        # Ensure any old voice client or zombie state is totally wiped
+                        await self.force_clean_voice_state(interaction.guild)
 
                         player = await target_channel.connect(
                             cls=CustomPlayer, 
@@ -3199,6 +3217,7 @@ class Music(commands.Cog):
             # Check if user is in voice channel
             if interaction.user.voice and interaction.user.voice.channel:
                 try:
+                    await self.force_clean_voice_state(interaction.guild)
                     player = await interaction.user.voice.channel.connect(cls=CustomPlayer, timeout=60.0)
                     player.text_channel = interaction.channel
                 except Exception as e:
