@@ -87,6 +87,37 @@ bot = MusicBot(command_prefix=os.getenv("MUSIC_COMMAND_PREFIX", "!"), intents=in
 async def on_ready() -> None:
     logger.info("Music bot logged in as %s (%s)", bot.user, bot.user.id if bot.user else "unknown")
 
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    logger.info(f"Joined new guild: {guild.name} (ID: {guild.id})")
+    channel_id = 1523997324513116241
+    channel = bot.get_channel(channel_id)
+    if channel:
+        embed = discord.Embed(title="Bot Joined a New Server! 🎉", color=discord.Color.green())
+        embed.add_field(name="Server Name", value=guild.name, inline=False)
+        embed.add_field(name="Server ID", value=str(guild.id), inline=False)
+        embed.add_field(name="Member Count", value=str(guild.member_count), inline=False)
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        try:
+            await channel.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Failed to send join notification: {e}")
+
+@bot.event
+async def on_guild_remove(guild: discord.Guild):
+    logger.info(f"Left guild: {guild.name} (ID: {guild.id})")
+    channel_id = 1523997324513116241
+    channel = bot.get_channel(channel_id)
+    if channel:
+        embed = discord.Embed(title="Bot Left a Server 😢", color=discord.Color.red())
+        embed.add_field(name="Server Name", value=guild.name, inline=False)
+        embed.add_field(name="Server ID", value=str(guild.id), inline=False)
+        try:
+            await channel.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Failed to send leave notification: {e}")
+
 
 async def main() -> None:
     token = os.getenv("MUSIC_DISCORD_TOKEN")
