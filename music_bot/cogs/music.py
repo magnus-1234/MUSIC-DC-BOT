@@ -2065,13 +2065,12 @@ class Music(commands.Cog):
         try:
             from music_bot.storage.music_state_storage import music_state_storage
             track_info = {
-                'uri': track.uri,
-                'title': track.title,
-                'author': track.author,
-                'artwork': track.artwork
+                'uri': getattr(track, 'uri', None),
+                'title': getattr(track, 'title', 'Unknown'),
+                'author': getattr(track, 'author', 'Unknown'),
+                'artwork': getattr(track, 'artwork', None)
             }
-            # Fire and forget history save
-            asyncio.create_task(music_state_storage.add_to_history(player.guild.id, track_info))
+            await music_state_storage.add_to_history(player.guild.id, track_info)
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Failed to save track history: {e}")
