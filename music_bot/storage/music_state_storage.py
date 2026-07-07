@@ -141,10 +141,65 @@ class MusicStateStorage:
                 )
             """)
             
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS music_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    uri TEXT NOT NULL,
+                    title TEXT,
+                    author TEXT,
+                    artwork TEXT,
+                    played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
             conn.commit()
             conn.close()
         except Exception as e:
             print(f"[MusicStateStorage] Error initializing SQLite: {e}")
+            
+    async def add_to_history(self, guild_id: int, track_info: Dict[str, Any]) -> bool:
+        """Add a track to the playback history"""
+        now = datetime.utcnow().isoformat()
+        
+        if self.mongo_enabled:
+            try:
+                collection = self.mongo_db['music_history']
+                await collection.insert_one({
+                    'guild_id': guild_id,
+                    'track': {
+                        'uri': track_info.get('uri'),
+                        'title': track_info.get('title'),
+                        'author': track_info.get('author'),
+                        'artwork': track_info.get('artwork')
+                    },
+                    'played_at': now
+                })
+                return True
+            except Exception as e:
+                print(f"[MusicStateStorage] Error saving to MongoDB history: {e}")
+                return False
+        else:
+            try:
+                conn = sqlite3.connect(self.sqlite_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO music_history (guild_id, uri, title, author, artwork, played_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    guild_id,
+                    track_info.get('uri'),
+                    track_info.get('title'),
+                    track_info.get('author'),
+                    track_info.get('artwork'),
+                    now
+                ))
+                conn.commit()
+                conn.close()
+                return True
+            except Exception as e:
+                print(f"[MusicStateStorage] Error saving to SQLite history: {e}")
+                return False
     
     async def save_state(
         self,

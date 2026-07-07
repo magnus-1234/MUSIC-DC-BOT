@@ -2060,6 +2060,21 @@ class Music(commands.Cog):
         
         # Update voice channel status with currently playing track
         await self.update_voice_channel_status(player, track)
+        
+        # Save to history
+        try:
+            from music_bot.storage.music_state_storage import music_state_storage
+            track_info = {
+                'uri': track.uri,
+                'title': track.title,
+                'author': track.author,
+                'artwork': track.artwork
+            }
+            # Fire and forget history save
+            asyncio.create_task(music_state_storage.add_to_history(player.guild.id, track_info))
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to save track history: {e}")
     
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
