@@ -92,6 +92,12 @@ async def on_guild_join(guild: discord.Guild):
     logger.info(f"Joined new guild: {guild.name} (ID: {guild.id})")
     channel_id = 1523997324513116241
     channel = bot.get_channel(channel_id)
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(channel_id)
+        except Exception as e:
+            logger.error(f"Could not fetch notification channel: {e}")
+            
     if channel:
         embed = discord.Embed(title="Bot Joined a New Server! 🎉", color=discord.Color.green())
         embed.add_field(name="Server Name", value=guild.name, inline=False)
@@ -109,6 +115,12 @@ async def on_guild_remove(guild: discord.Guild):
     logger.info(f"Left guild: {guild.name} (ID: {guild.id})")
     channel_id = 1523997324513116241
     channel = bot.get_channel(channel_id)
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(channel_id)
+        except Exception as e:
+            logger.error(f"Could not fetch notification channel: {e}")
+            
     if channel:
         embed = discord.Embed(title="Bot Left a Server 😢", color=discord.Color.red())
         embed.add_field(name="Server Name", value=guild.name, inline=False)
