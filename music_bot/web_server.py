@@ -32,7 +32,7 @@ MUSIC_API_SECRET = os.getenv("MUSIC_API_SECRET", "")
 WEB_SERVER_PORT = int(os.getenv("MUSIC_WEB_SERVER_PORT", os.getenv("PORT", "8090")))
 WEB_SERVER_HOST = os.getenv("MUSIC_WEB_SERVER_HOST", "0.0.0.0")
 
-VALID_ACTIONS = {"pause", "resume", "skip", "stop", "volume", "loop", "shuffle", "play_playlist", "channels", "play"}
+VALID_ACTIONS = {"pause", "resume", "skip", "stop", "volume", "loop", "shuffle", "play_playlist", "channels", "play", "play_now"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -273,7 +273,7 @@ async def _handle_control(request: web.Request) -> web.Response:
     player = guild.voice_client
 
     # Actions that don't need an active player
-    if action not in ("channels", "play", "play_playlist") and (not player or not isinstance(player, wavelink.Player)):
+    if action not in ("channels", "play", "play_now", "play_playlist") and (not player or not isinstance(player, wavelink.Player)):
         return _json_response({"error": "Bot is not in a voice channel. Play something first."}, 404)
 
     try:
@@ -284,7 +284,7 @@ async def _handle_control(request: web.Request) -> web.Response:
                 "textChannels": [{"id": str(c.id), "name": c.name} for c in guild.text_channels],
             })
 
-        elif action == "play":
+        elif action in ("play", "play_now"):
             query = str(value) if value else ""
             if not query:
                 return _json_response({"error": "Query is required for play action"}, 400)
@@ -308,17 +308,39 @@ async def _handle_control(request: web.Request) -> web.Response:
                 return _json_response({"error": "No tracks found for that search"}, 404)
 
             track = tracks[0] if isinstance(tracks, list) else tracks
+            music_cog = bot.get_cog("Music")
+            
             if isinstance(track, wavelink.Playlist):
                 for t in track.tracks:
+                    t.extras.requester_id = user_id or bot.user.id
+                    t.extras.requester_name = "Web Dashboard"
                     await player.queue.put_wait(t)
-                if not player.playing:
-                    await player.play(player.queue.get())
-                return _json_response({"ok": True, "action": "play", "track": track.name, "isPlaylist": True})
+                
+                if action == "play_now" or (not player.playing and not player.queue.is_empty):
+                    next_track = player.queue.get()
+                    if music_cog:
+                        await music_cog.safe_play(player, next_track)
+                    else:
+                        await player.play(next_track)
+                return _json_response({"ok": True, "action": action, "track": track.name, "isPlaylist": True})
             else:
-                await player.queue.put_wait(track)
-                if not player.playing:
-                    await player.play(player.queue.get())
-                return _json_response({"ok": True, "action": "play", "track": track.title})
+                track.extras.requester_id = user_id or bot.user.id
+                track.extras.requester_name = "Web Dashboard"
+                
+                if action == "play_now":
+                    if music_cog:
+                        await music_cog.safe_play(player, track)
+                    else:
+                        await player.play(track)
+                else:
+                    await player.queue.put_wait(track)
+                    if not player.playing:
+                        next_track = player.queue.get()
+                        if music_cog:
+                            await music_cog.safe_play(player, next_track)
+                        else:
+                            await player.play(next_track)
+                return _json_response({"ok": True, "action": action, "track": track.title})
 
         elif action == "pause":
             await player.pause(True)
@@ -381,6 +403,7 @@ async def _handle_control(request: web.Request) -> web.Response:
                 return _json_response({"error": "Playlist not found — save it first with /playlist save in Discord"}, 404)
 
             loaded = 0
+            music_cog = bot.get_cog("Music")
             for saved_track in playlist.get("tracks", []):
                 uri = saved_track.get("uri") or saved_track.get("title")
                 if not uri:
@@ -391,9 +414,13 @@ async def _handle_control(request: web.Request) -> web.Response:
                 t = found[0] if isinstance(found, list) else found
                 if isinstance(t, wavelink.Playlist):
                     for pt in t.tracks:
+                        pt.extras.requester_id = user_id or bot.user.id
+                        pt.extras.requester_name = "Web Dashboard"
                         await player.queue.put_wait(pt)
                         loaded += 1
                 else:
+                    t.extras.requester_id = user_id or bot.user.id
+                    t.extras.requester_name = "Web Dashboard"
                     await player.queue.put_wait(t)
                     loaded += 1
 
@@ -402,7 +429,11 @@ async def _handle_control(request: web.Request) -> web.Response:
 
             player.current_playlist_name = playlist_name
             if not player.playing and not player.queue.is_empty:
-                await player.play(player.queue.get())
+                next_track = player.queue.get()
+                if music_cog:
+                    await music_cog.safe_play(player, next_track)
+                else:
+                    await player.play(next_track)
             return _json_response({"ok": True, "action": "play_playlist", "playlist": playlist_name, "tracks": loaded})
 
     except Exception as e:
