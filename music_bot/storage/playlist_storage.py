@@ -120,7 +120,7 @@ class PlaylistStorage:
         try:
             collection = self.mongo_db[self.collection_name]
             await collection.update_one(
-                {'guild_id': guild_id, 'user_id': user_id, 'name': name},
+                {'guild_id': {'$in': [guild_id, str(guild_id)]}, 'user_id': {'$in': [user_id, str(user_id)]}, 'name': name},
                 {
                     '$set': {'tracks': tracks, 'updated_at': now},
                     '$setOnInsert': {'created_at': now}
@@ -138,9 +138,9 @@ class PlaylistStorage:
         if not self.mongo_enabled:
             return None
         try:
-            doc = await self.mongo_db[self.collection_name].find_one({'guild_id': guild_id, 'user_id': user_id, 'name': name})
+            doc = await self.mongo_db[self.collection_name].find_one({'guild_id': {'$in': [guild_id, str(guild_id)]}, 'user_id': {'$in': [user_id, str(user_id)]}, 'name': name})
             if not doc:
-                doc = await self.mongo_db['playlists'].find_one({'guild_id': guild_id, 'user_id': user_id, 'name': name})
+                doc = await self.mongo_db['playlists'].find_one({'guild_id': {'$in': [guild_id, str(guild_id)]}, 'user_id': {'$in': [user_id, str(user_id)]}, 'name': name})
             if doc:
                 return {
                     'name': doc['name'],
@@ -161,8 +161,10 @@ class PlaylistStorage:
             bot_col = self.mongo_db['playlists']
             web_col = self.mongo_db[self.collection_name]
             
-            bot_docs = await bot_col.find({'guild_id': guild_id, 'user_id': user_id}).sort('updated_at', -1).to_list(length=limit + offset)
-            web_docs = await web_col.find({'guild_id': guild_id, 'user_id': user_id}).sort('updated_at', -1).to_list(length=limit + offset)
+            query = {'guild_id': {'$in': [guild_id, str(guild_id)]}, 'user_id': {'$in': [user_id, str(user_id)]}}
+            
+            bot_docs = await bot_col.find(query).sort('updated_at', -1).to_list(length=limit + offset)
+            web_docs = await web_col.find(query).sort('updated_at', -1).to_list(length=limit + offset)
             
             all_docs = bot_docs + web_docs
             all_docs.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
@@ -200,8 +202,10 @@ class PlaylistStorage:
             bot_col = self.mongo_db['playlists']
             web_col = self.mongo_db[self.collection_name]
             
-            bot_docs = await bot_col.find({'user_id': user_id}).sort('updated_at', -1).to_list(length=limit)
-            web_docs = await web_col.find({'user_id': user_id}).sort('updated_at', -1).to_list(length=limit)
+            query = {'user_id': {'$in': [user_id, str(user_id)]}}
+            
+            bot_docs = await bot_col.find(query).sort('updated_at', -1).to_list(length=limit)
+            web_docs = await web_col.find(query).sort('updated_at', -1).to_list(length=limit)
             
             all_docs = bot_docs + web_docs
             all_docs.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
@@ -236,8 +240,9 @@ class PlaylistStorage:
         if not self.mongo_enabled:
             return False
         try:
-            await self.mongo_db['playlists'].delete_one({'guild_id': guild_id, 'user_id': user_id, 'name': name})
-            result = await self.mongo_db[self.collection_name].delete_one({'guild_id': guild_id, 'user_id': user_id, 'name': name})
+            query = {'guild_id': {'$in': [guild_id, str(guild_id)]}, 'user_id': {'$in': [user_id, str(user_id)]}, 'name': name}
+            await self.mongo_db['playlists'].delete_one(query)
+            result = await self.mongo_db[self.collection_name].delete_one(query)
             return True
         except Exception as e:
             logger.error("MongoDB delete error: %s", e)
@@ -248,8 +253,9 @@ class PlaylistStorage:
         if not self.mongo_enabled:
             return 0
         try:
-            bot_names = await self.mongo_db['playlists'].distinct('name', {'guild_id': guild_id, 'user_id': user_id})
-            web_names = await self.mongo_db[self.collection_name].distinct('name', {'guild_id': guild_id, 'user_id': user_id})
+            query = {'guild_id': {'$in': [guild_id, str(guild_id)]}, 'user_id': {'$in': [user_id, str(user_id)]}}
+            bot_names = await self.mongo_db['playlists'].distinct('name', query)
+            web_names = await self.mongo_db[self.collection_name].distinct('name', query)
             return len(set(bot_names + web_names))
         except Exception as e:
             logger.error("MongoDB count error: %s", e)
