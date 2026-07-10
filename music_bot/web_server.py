@@ -388,11 +388,20 @@ async def _handle_control(request: web.Request) -> web.Response:
             embed = music_cog.create_now_playing_embed(player)
             view = PlayerControlView(player)
             
+            if not getattr(player, "text_channel", None):
+                tc = guild.system_channel
+                if not tc or not tc.permissions_for(guild.me).send_messages:
+                    tc = next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
+                if not tc:
+                    return _json_response({"error": "No text channel available to send the message"}, 400)
+                player.text_channel = tc
+
             if hasattr(player, "now_playing_message") and player.now_playing_message:
                 try:
                     await player.now_playing_message.delete()
                 except:
                     pass
+
             
             player.now_playing_message = await player.text_channel.send(embed=embed, view=view)
             player.now_playing_message_created_at = __import__("time").time()
