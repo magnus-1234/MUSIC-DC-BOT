@@ -32,7 +32,7 @@ MUSIC_API_SECRET = os.getenv("MUSIC_API_SECRET", "")
 WEB_SERVER_PORT = int(os.getenv("MUSIC_WEB_SERVER_PORT", os.getenv("PORT", "8090")))
 WEB_SERVER_HOST = os.getenv("MUSIC_WEB_SERVER_HOST", "0.0.0.0")
 
-VALID_ACTIONS = {"pause", "resume", "skip", "stop", "volume", "loop", "shuffle", "play_playlist", "channels", "play", "play_now"}
+VALID_ACTIONS = {"pause", "resume", "skip", "stop", "volume", "loop", "shuffle", "play_playlist", "channels", "play", "play_now", "now_playing"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -375,6 +375,29 @@ async def _handle_control(request: web.Request) -> web.Response:
         elif action == "shuffle":
             player.queue.shuffle()
             return _json_response({"ok": True, "action": "shuffle"})
+
+        elif action == "now_playing":
+            if not getattr(player, "current", None):
+                return _json_response({"error": "Nothing is playing right now"}, 400)
+            
+            music_cog = bot.get_cog("Music")
+            if not music_cog:
+                return _json_response({"error": "Music cog not found"}, 500)
+            
+            from music_bot.cogs.music import PlayerControlView
+            embed = music_cog.create_now_playing_embed(player)
+            view = PlayerControlView(player)
+            
+            if hasattr(player, "now_playing_message") and player.now_playing_message:
+                try:
+                    await player.now_playing_message.delete()
+                except:
+                    pass
+            
+            player.now_playing_message = await player.text_channel.send(embed=embed, view=view)
+            player.now_playing_message_created_at = __import__("time").time()
+            return _json_response({"ok": True, "action": "now_playing"})
+
 
         elif action == "play_playlist":
             playlist_name = str(value) if value else ""
