@@ -32,7 +32,7 @@ MUSIC_API_SECRET = os.getenv("MUSIC_API_SECRET", "")
 WEB_SERVER_PORT = int(os.getenv("MUSIC_WEB_SERVER_PORT", os.getenv("PORT", "8090")))
 WEB_SERVER_HOST = os.getenv("MUSIC_WEB_SERVER_HOST", "0.0.0.0")
 
-VALID_ACTIONS = {"pause", "resume", "skip", "stop", "volume", "loop", "shuffle", "play_playlist", "channels", "play", "play_now", "now_playing"}
+VALID_ACTIONS = {"pause", "resume", "skip", "stop", "volume", "loop", "shuffle", "play_playlist", "channels", "play", "play_now", "now_playing", "remove_queue"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -119,6 +119,7 @@ def _get_player_status(bot: "MusicBot", guild_id: int) -> Optional[dict]:
                 "author": getattr(track, "author", "Unknown"),
                 "uri": getattr(track, "uri", ""),
                 "length": getattr(track, "length", 0),
+                "artwork": getattr(track, "artwork", None),
             })
 
     voice_channel = None
@@ -353,6 +354,14 @@ async def _handle_control(request: web.Request) -> web.Response:
         elif action == "skip":
             await player.skip(force=True)
             return _json_response({"ok": True, "action": "skip"})
+
+        elif action == "remove_queue":
+            try:
+                index = int(value)
+                player.queue.delete(index)
+                return _json_response({"ok": True, "action": "remove_queue"})
+            except (ValueError, TypeError, IndexError):
+                return _json_response({"error": "Invalid queue index"}, 400)
 
         elif action == "stop":
             player.queue.clear()
