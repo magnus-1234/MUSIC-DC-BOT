@@ -173,6 +173,13 @@ class PlaylistManagementView(discord.ui.View):
         self.user_id = user_id
         self.guild_id = guild_id
         self.player = player
+        self.playlist_count = 0
+        self.total_tracks = 0
+
+    async def load_data(self):
+        playlists = await playlist_storage.list_playlists(self.guild_id, self.user_id)
+        self.playlist_count = len(playlists)
+        self.total_tracks = sum(_get_track_count(p) for p in playlists)
 
     def get_embed(self) -> discord.Embed:
         queue_count = self.player.queue.count
@@ -185,10 +192,12 @@ class PlaylistManagementView(discord.ui.View):
         )
 
         status_text = f"**Queue:** {queue_count} tracks\n"
-        status_text += f"**Now Playing:** {current_playing}\n"
+        status_text += f"**Now Playing:** {current_playing}\n\n"
+        status_text += f"**Saved Playlists:** {self.playlist_count} playlist(s)\n"
+        status_text += f"**Total Tracks:** {self.total_tracks} track(s)\n"
 
-        if self.player.current_playlist_name:
-            status_text += f"**Loaded Playlist:** 📁 {self.player.current_playlist_name}"
+        if getattr(self.player, 'current_playlist_name', None):
+            status_text += f"\n**Loaded Playlist:** 📁 {self.player.current_playlist_name}"
 
         embed.add_field(name="📊 Current Status", value=status_text, inline=False)
         embed.add_field(
@@ -480,6 +489,7 @@ class PlaylistListView(discord.ui.View):
 
     async def back_to_main(self, interaction: discord.Interaction):
         view = PlaylistManagementView(self.user_id, self.guild_id, self.player)
+        await view.load_data()
         embed = view.get_embed()
         await interaction.response.edit_message(embed=embed, view=view)
 

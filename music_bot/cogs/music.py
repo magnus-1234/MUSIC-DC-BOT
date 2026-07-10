@@ -3250,6 +3250,7 @@ class Music(commands.Cog):
                 })()
         
         view = PlaylistManagementView(interaction.user.id, interaction.guild.id, player)
+        await view.load_data()
         embed = view.get_embed()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
