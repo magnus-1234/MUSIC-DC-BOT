@@ -2007,7 +2007,11 @@ class Music(commands.Cog):
         )
         
         # Enhanced title section with better formatting
-        title_section = f"# 🎵 Now Playing\n"
+        playlist_name = getattr(track.extras, 'playlist_name', None)
+        if playlist_name:
+            title_section = f"# 🎵 Playing from: {playlist_name}\n"
+        else:
+            title_section = f"# 🎵 Now Playing\n"
         title_section += f"### [{track.title}]({track.uri if hasattr(track, 'uri') else 'https://discord.com'})\n"
         title_section += f"**by** {track.author}"
         

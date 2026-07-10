@@ -898,6 +898,7 @@ class SearchModal(discord.ui.Modal, title="Search for Music"):
                 if hasattr(results, 'artwork') and results.artwork:
                     for t in tracks_list:
                         t.extras.playlist_icon_url = results.artwork
+                        t.extras.playlist_name = results.name
             elif isinstance(results, list):
                 tracks_list = results
             else:
@@ -2249,6 +2250,7 @@ class Music(commands.Cog):
                                     track.extras.requester_name = str(member)
                                     if hasattr(tracks, 'artwork') and tracks.artwork:
                                         track.extras.playlist_icon_url = tracks.artwork
+                                    track.extras.playlist_name = tracks.name
                                     player.queue.put(track)
                                 
                                 # Start playing if nothing is playing
@@ -2541,7 +2543,11 @@ class Music(commands.Cog):
         )
         
         # Enhanced title section with better formatting
-        title_section = f"# 🎵 Now Playing\n"
+        playlist_name = getattr(track.extras, 'playlist_name', None)
+        if playlist_name:
+            title_section = f"# 🎵 Playing from: {playlist_name}\n"
+        else:
+            title_section = f"# 🎵 Now Playing\n"
         title_section += f"### [{track.title}]({track.uri if hasattr(track, 'uri') else 'https://discord.com'})\n"
         title_section += f"**by** {track.author}"
         
@@ -2878,6 +2884,7 @@ class Music(commands.Cog):
                     track.extras.requester_name = str(interaction.user)
                     if hasattr(tracks, 'artwork') and tracks.artwork:
                         track.extras.playlist_icon_url = tracks.artwork
+                    track.extras.playlist_name = tracks.name
                     player.queue.put(track)
                     
                 await interaction.followup.send(
