@@ -448,11 +448,15 @@ async def _handle_control(request: web.Request) -> web.Response:
                     for pt in t.tracks:
                         pt.extras.requester_id = user_id or bot.user.id
                         pt.extras.requester_name = "Web Dashboard"
+                        if playlist.get("iconUrl"):
+                            pt.extras.playlist_icon_url = playlist.get("iconUrl")
                         await player.queue.put_wait(pt)
                         loaded += 1
                 else:
                     t.extras.requester_id = user_id or bot.user.id
                     t.extras.requester_name = "Web Dashboard"
+                    if playlist.get("iconUrl"):
+                        t.extras.playlist_icon_url = playlist.get("iconUrl")
                     await player.queue.put_wait(t)
                     loaded += 1
 

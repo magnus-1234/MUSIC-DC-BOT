@@ -2014,10 +2014,19 @@ class Music(commands.Cog):
         embed.description = title_section
         
         # Add image if available (use set_image for larger display instead of thumbnail)
-        if hasattr(track, 'artwork') and track.artwork:
-            embed.set_image(url=track.artwork)
-        elif hasattr(track, 'thumbnail') and track.thumbnail:
-            embed.set_image(url=track.thumbnail)
+        playlist_icon_url = getattr(track.extras, 'playlist_icon_url', None)
+        
+        if playlist_icon_url:
+            embed.set_image(url=playlist_icon_url)
+            if hasattr(track, 'artwork') and track.artwork:
+                embed.set_thumbnail(url=track.artwork)
+            elif hasattr(track, 'thumbnail') and track.thumbnail:
+                embed.set_thumbnail(url=track.thumbnail)
+        else:
+            if hasattr(track, 'artwork') and track.artwork:
+                embed.set_image(url=track.artwork)
+            elif hasattr(track, 'thumbnail') and track.thumbnail:
+                embed.set_image(url=track.thumbnail)
             
         # Progress bar as a prominent field
         embed.add_field(

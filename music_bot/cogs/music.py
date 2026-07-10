@@ -895,6 +895,9 @@ class SearchModal(discord.ui.Modal, title="Search for Music"):
             # Convert results to list
             if isinstance(results, wavelink.Playlist):
                 tracks_list = list(results.tracks)
+                if hasattr(results, 'artwork') and results.artwork:
+                    for t in tracks_list:
+                        t.extras.playlist_icon_url = results.artwork
             elif isinstance(results, list):
                 tracks_list = results
             else:
@@ -2244,6 +2247,8 @@ class Music(commands.Cog):
                                 for track in tracks.tracks:
                                     track.extras.requester_id = member.id
                                     track.extras.requester_name = str(member)
+                                    if hasattr(tracks, 'artwork') and tracks.artwork:
+                                        track.extras.playlist_icon_url = tracks.artwork
                                     player.queue.put(track)
                                 
                                 # Start playing if nothing is playing
@@ -2543,10 +2548,19 @@ class Music(commands.Cog):
         embed.description = title_section
         
         # Add image if available (use set_image for larger display instead of thumbnail)
-        if hasattr(track, 'artwork') and track.artwork:
-            embed.set_image(url=track.artwork)
-        elif hasattr(track, 'thumbnail') and track.thumbnail:
-            embed.set_image(url=track.thumbnail)
+        playlist_icon_url = getattr(track.extras, 'playlist_icon_url', None)
+        
+        if playlist_icon_url:
+            embed.set_image(url=playlist_icon_url)
+            if hasattr(track, 'artwork') and track.artwork:
+                embed.set_thumbnail(url=track.artwork)
+            elif hasattr(track, 'thumbnail') and track.thumbnail:
+                embed.set_thumbnail(url=track.thumbnail)
+        else:
+            if hasattr(track, 'artwork') and track.artwork:
+                embed.set_image(url=track.artwork)
+            elif hasattr(track, 'thumbnail') and track.thumbnail:
+                embed.set_image(url=track.thumbnail)
             
         # Progress bar as a prominent field
         embed.add_field(
@@ -2862,6 +2876,8 @@ class Music(commands.Cog):
                     # Store user ID and name instead of Member object
                     track.extras.requester_id = interaction.user.id
                     track.extras.requester_name = str(interaction.user)
+                    if hasattr(tracks, 'artwork') and tracks.artwork:
+                        track.extras.playlist_icon_url = tracks.artwork
                     player.queue.put(track)
                     
                 await interaction.followup.send(

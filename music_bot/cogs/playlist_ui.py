@@ -406,6 +406,8 @@ class PlaylistListView(discord.ui.View):
                         track = tracks[0] if isinstance(tracks, list) else tracks
                         track.extras.requester_id = self.user_id
                         track.extras.requester_name = str(interaction.user)
+                        if playlist.get('iconUrl'):
+                            track.extras.playlist_icon_url = playlist.get('iconUrl')
                         self.player.queue.put(track)
                         loaded_count += 1
                 except Exception as e:
