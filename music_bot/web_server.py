@@ -297,7 +297,10 @@ async def _handle_control(request: web.Request) -> web.Response:
                 if not vc:
                     return _json_response({"error": "Voice channel not found"}, 404)
                 from music_bot.cogs.music import CustomPlayer
-                player = await vc.connect(cls=CustomPlayer)
+                music_cog = bot.get_cog("Music")
+                if music_cog and hasattr(music_cog, "force_clean_voice_state"):
+                    await music_cog.force_clean_voice_state(guild)
+                player = await vc.connect(cls=CustomPlayer, timeout=60.0, self_deaf=True)
 
             if text_channel_id and hasattr(player, "text_channel"):
                 tc = guild.get_channel(int(text_channel_id))
