@@ -384,6 +384,15 @@ class PlayerControlView(discord.ui.View):
         super().__init__(timeout=None)
         self.player = player
         
+        # Add Web Player URL button
+        self.add_item(discord.ui.Button(
+            label="Web Player",
+            style=discord.ButtonStyle.link,
+            url="https://whiteoutsurvival.dev/music",
+            emoji="🌐",
+            row=2
+        ))
+        
         # Update stop button based on player state
         self._update_stop_button_state()
     
