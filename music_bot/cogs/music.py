@@ -2150,6 +2150,8 @@ class Music(commands.Cog):
                         import time
                         start_time = time.time()
                         
+                        await self.force_clean_voice_state(voice_channel.guild)
+                        
                         player = await voice_channel.connect(
                             cls=CustomPlayer, 
                             timeout=connect_timeout, 
@@ -2442,7 +2444,7 @@ class Music(commands.Cog):
                     
                     # Reconnect to voice channel
                     if player.channel:
-                        new_player: CustomPlayer = await player.channel.connect(cls=CustomPlayer, timeout=30.0, self_deaf=True)
+                        new_player: CustomPlayer = await player.channel.connect(cls=CustomPlayer, timeout=60.0, self_deaf=True)
                         
                         # Optimize voice quality
                         await self.optimize_voice_quality(player.channel)
@@ -3255,7 +3257,7 @@ class Music(commands.Cog):
             if interaction.user.voice and interaction.user.voice.channel:
                 try:
                     await self.force_clean_voice_state(interaction.guild)
-                    player = await interaction.user.voice.channel.connect(cls=CustomPlayer, timeout=60.0)
+                    player = await interaction.user.voice.channel.connect(cls=CustomPlayer, timeout=60.0, self_deaf=True)
                     player.text_channel = interaction.channel
                 except Exception as e:
                     await interaction.response.send_message(
