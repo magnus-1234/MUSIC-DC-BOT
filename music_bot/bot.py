@@ -54,7 +54,8 @@ class MusicBot(commands.Bot):
         await music_state_storage.initialize()
         await self.load_extension("music_bot.cogs.music")
         await self.load_extension("music_bot.cogs.help")
-        logger.info("Loaded music and help bot cogs")
+        await self.load_extension("music_bot.cogs.presence")
+        logger.info("Loaded music, help, and presence bot cogs")
 
         guild_ids = _guild_ids()
         if guild_ids:
