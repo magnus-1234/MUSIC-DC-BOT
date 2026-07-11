@@ -32,7 +32,7 @@ except ImportError:
     music_state_storage = None
 
 # Music restart behavior configuration
-MUSIC_AUTO_RESUME = os.getenv('MUSIC_AUTO_RESUME', 'false').lower() == 'true'  # Pause by default
+MUSIC_AUTO_RESUME = os.getenv('MUSIC_AUTO_RESUME', 'true').lower() == 'true'  # Resume by default
 
 
 class CustomPlayer(wavelink.Player):
