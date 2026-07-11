@@ -282,7 +282,7 @@ async def _handle_control(request: web.Request) -> web.Response:
             return _json_response({
                 "ok": True,
                 "voiceChannels": [{"id": str(c.id), "name": c.name} for c in guild.voice_channels],
-                "textChannels": [{"id": str(c.id), "name": c.name} for c in guild.text_channels],
+                "textChannels": [{"id": str(c.id), "name": c.name} for c in guild.text_channels + guild.voice_channels],
             })
 
         elif action in ("play", "play_now"):
@@ -400,6 +400,11 @@ async def _handle_control(request: web.Request) -> web.Response:
             embed = music_cog.create_now_playing_embed(player)
             view = PlayerControlView(player)
             
+            if text_channel_id and hasattr(player, "text_channel"):
+                tc = guild.get_channel(int(text_channel_id))
+                if tc:
+                    player.text_channel = tc
+
             if not getattr(player, "text_channel", None):
                 tc = guild.system_channel
                 if not tc or not tc.permissions_for(guild.me).send_messages:
