@@ -460,7 +460,13 @@ async def _handle_control(request: web.Request) -> web.Response:
                 uri_str = str(uri)
                 if len(uri_str) == 11 and not uri_str.startswith("http"):
                     uri_str = f"https://www.youtube.com/watch?v={uri_str}"
-                found = await wavelink.Playable.search(uri_str)
+                
+                try:
+                    found = await wavelink.Playable.search(uri_str)
+                except Exception as e:
+                    logger.warning("Failed to search track %s: %s", uri_str, e)
+                    continue
+
                 if not found:
                     continue
                 t = found[0] if isinstance(found, list) else found
