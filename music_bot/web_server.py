@@ -456,51 +456,58 @@ async def _handle_control(request: web.Request) -> web.Response:
             if not playlist:
                 return _json_response({"error": "Playlist not found — save it first with /playlist save in Discord"}, 404)
 
-            loaded = 0
-            music_cog = bot.get_cog("Music")
-            for saved_track in playlist.get("tracks", []):
-                uri = saved_track.get("uri") or saved_track.get("title")
-                if not uri:
-                    continue
-                uri_str = str(uri)
-                if len(uri_str) == 11 and not uri_str.startswith("http"):
-                    uri_str = f"https://www.youtube.com/watch?v={uri_str}"
-                
-                try:
-                    found = await wavelink.Playable.search(uri_str)
-                except Exception as e:
-                    logger.warning("Failed to search track %s: %s", uri_str, e)
-                    continue
-
-                if not found:
-                    continue
-                t = found[0] if isinstance(found, list) else found
-                if isinstance(t, wavelink.Playlist):
-                    for pt in t.tracks:
-                        pt.extras.requester_id = user_id or bot.user.id
-                        pt.extras.requester_name = "Web Dashboard"
-                        if playlist.get("iconUrl"):
-                            pt.extras.playlist_icon_url = playlist.get("iconUrl")
-                        await player.queue.put_wait(pt)
-                        loaded += 1
-                else:
-                    t.extras.requester_id = user_id or bot.user.id
-                    t.extras.requester_name = "Web Dashboard"
-                    if playlist.get("iconUrl"):
-                        t.extras.playlist_icon_url = playlist.get("iconUrl")
-                    await player.queue.put_wait(t)
-                    loaded += 1
-
+            loaded = len(playlist.get("tracks", []))
             if loaded == 0:
                 return _json_response({"error": "No playable tracks found in that playlist"}, 404)
 
-            player.current_playlist_name = playlist_name
-            if not player.playing and not player.queue.is_empty:
-                next_track = player.queue.get()
-                if music_cog:
-                    await music_cog.safe_play(player, next_track)
-                else:
-                    await player.play(next_track)
+            async def _background_load_playlist():
+                music_cog = bot.get_cog("Music")
+                loaded_count = 0
+                for saved_track in playlist.get("tracks", []):
+                    uri = saved_track.get("uri") or saved_track.get("title")
+                    if not uri:
+                        continue
+                    uri_str = str(uri)
+                    if len(uri_str) == 11 and not uri_str.startswith("http"):
+                        uri_str = f"https://www.youtube.com/watch?v={uri_str}"
+                    
+                    try:
+                        found = await wavelink.Playable.search(uri_str)
+                    except Exception as e:
+                        logger.warning("Failed to search track %s: %s", uri_str, e)
+                        continue
+
+                    if not found:
+                        continue
+                    t = found[0] if isinstance(found, list) else found
+                    if isinstance(t, wavelink.Playlist):
+                        for pt in t.tracks:
+                            pt.extras.requester_id = user_id or bot.user.id
+                            pt.extras.requester_name = "Web Dashboard"
+                            if playlist.get("iconUrl"):
+                                pt.extras.playlist_icon_url = playlist.get("iconUrl")
+                            await player.queue.put_wait(pt)
+                            loaded_count += 1
+                    else:
+                        t.extras.requester_id = user_id or bot.user.id
+                        t.extras.requester_name = "Web Dashboard"
+                        if playlist.get("iconUrl"):
+                            t.extras.playlist_icon_url = playlist.get("iconUrl")
+                        await player.queue.put_wait(t)
+                        loaded_count += 1
+
+                    if loaded_count == 1:
+                        player.current_playlist_name = playlist_name
+                        if not player.playing:
+                            next_track = player.queue.get()
+                            if music_cog:
+                                bot.loop.create_task(music_cog.safe_play(player, next_track))
+                            else:
+                                bot.loop.create_task(player.play(next_track))
+                    
+                    await asyncio.sleep(0.8)
+
+            bot.loop.create_task(_background_load_playlist())
             return _json_response({"ok": True, "action": "play_playlist", "playlist": playlist_name, "tracks": loaded})
 
     except Exception as e:
