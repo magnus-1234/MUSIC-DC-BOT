@@ -457,7 +457,10 @@ async def _handle_control(request: web.Request) -> web.Response:
                 uri = saved_track.get("uri") or saved_track.get("title")
                 if not uri:
                     continue
-                found = await wavelink.Playable.search(str(uri))
+                uri_str = str(uri)
+                if len(uri_str) == 11 and not uri_str.startswith("http"):
+                    uri_str = f"https://www.youtube.com/watch?v={uri_str}"
+                found = await wavelink.Playable.search(uri_str)
                 if not found:
                     continue
                 t = found[0] if isinstance(found, list) else found
@@ -491,7 +494,10 @@ async def _handle_control(request: web.Request) -> web.Response:
 
     except Exception as e:
         logger.exception("Control action %s failed: %s", action, e)
-        return _json_response({"error": str(e)}, 500)
+        err_msg = str(e)
+        if not err_msg or err_msg == "None":
+            err_msg = f"An unexpected error occurred ({type(e).__name__})"
+        return _json_response({"error": err_msg}, 500)
 
     return _json_response({"error": "Unknown error"}, 500)
 
