@@ -307,7 +307,12 @@ async def _handle_control(request: web.Request) -> web.Response:
                 if tc:
                     player.text_channel = tc
 
-            tracks = await wavelink.Playable.search(query)
+            try:
+                tracks = await wavelink.Playable.search(query)
+            except Exception as e:
+                logger.warning("Failed to search single track %s: %s", query, e)
+                return _json_response({"error": f"Failed to load track (Lavalink node error: {e})"}, 500)
+
             if not tracks:
                 return _json_response({"error": "No tracks found for that search"}, 404)
 
