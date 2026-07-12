@@ -512,7 +512,6 @@ def create_web_app(bot: "MusicBot") -> web.Application:
 
     app.router.add_get("/health", _handle_health)
     app.router.add_get("/", _handle_health)
-    app.router.add_head("/", _handle_health)
     app.router.add_get("/guilds", _handle_guilds)
     app.router.add_get("/status", _handle_status)
     app.router.add_post("/control", _handle_control)
